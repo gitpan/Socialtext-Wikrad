@@ -1,0 +1,17 @@
+#!/usr/bin/perl
+use strict;
+use warnings;
+use Socialtext::Resting::Getopt qw/get_rester/;
+use lib 'lib';
+use App::Wikrad;
+
+my $r = get_rester(
+    server => 'https://www.socialtext.net',
+    workspace => 'stoss',
+);
+
+my $app = App::Wikrad->new(rester => $r);
+my $start_page = shift;
+$app->set_page($start_page);
+$app->run;
+exit;
