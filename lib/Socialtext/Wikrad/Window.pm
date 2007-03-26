@@ -200,7 +200,9 @@ sub choose_link {
     my $text = shift;
     my $arg = shift;
     my $page = $App->get_page;
+    $App->{cui}->status("Fetching ${text}s");
     my @links = $App->{rester}->$method($page, $arg);
+    $App->{cui}->nostatus;
     if (@links) {
         $App->{win}->listbox(
             -title => "Choose a $text",
