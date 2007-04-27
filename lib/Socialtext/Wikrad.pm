@@ -6,7 +6,7 @@ use Carp qw/croak/;
 use base 'Exporter';
 our @EXPORT_OK = qw/$App/;
 
-our $VERSION = '0.03';
+our $VERSION = '0.04';
 
 =head1 NAME
 
@@ -53,7 +53,7 @@ sub set_page {
     my $no_history = shift;
 
     my $pb = $self->{win}{page_box};
-    my $wksp = $self->{win}{wksp};
+    my $wksp = $self->{win}{workspace_box};
 
     unless ($no_history) {
         push @{ $self->{history} }, {
@@ -64,6 +64,7 @@ sub set_page {
     }
     $self->set_workspace($workspace) if $workspace;
     unless (defined $page) {
+        $self->{rester}->accept('text/plain');
         $page = $self->{rester}->get_homepage;
     }
     $pb->text($page);
@@ -73,7 +74,7 @@ sub set_page {
 sub set_workspace {
     my $self = shift;
     my $wksp = shift;
-    $self->{win}{wksp}->text($wksp);
+    $self->{win}{workspace_box}->text($wksp);
     $self->{rester}->workspace($wksp);
 }
 
@@ -96,6 +97,7 @@ sub load_page {
 
     if (! $current_page) {
         $self->{cui}->status('Fetching list of pages ...');
+        $self->{rester}->accept('text/plain');
         my @pages = $self->{rester}->get_pages;
         $self->{cui}->nostatus;
         $App->{win}->listbox(
@@ -110,6 +112,7 @@ sub load_page {
     }
 
     $self->{cui}->status("Loading page $current_page ...");
+    $self->{rester}->accept('text/x.socialtext-wiki');
     my $page_text = $self->{rester}->get_page($current_page);
     $self->{cui}->nostatus;
     $self->{win}{viewer}->text($page_text);
