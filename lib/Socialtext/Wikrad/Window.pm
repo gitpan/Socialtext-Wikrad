@@ -27,6 +27,7 @@ sub new {
     $v->set_binding( \&clone_page_from_template, 'C' );
     $v->set_binding( \&show_metadata,            'm' );
     $v->set_binding( \&add_pagetag,              'T' );
+    $v->set_binding( \&new_blog_post,            'P' );
 
     $v->set_binding( sub { editor() },                  'e' );
     $v->set_binding( sub { editor('--pull-includes') }, 'E' );
@@ -58,33 +59,35 @@ sub show_help {
         -bg => 'blue',
         -title => 'Help:',
         -message => <<EOT);
-Navigation:
- w - set workspace
- p - set page
- t - choose from tagged pages
- r - choose from recently changed pages
- g - choose from the frontlinks
- B - choose from the backlinks
- e - open page for edit
- E - open page for edit (--pull-includes)
- b - go back
- u - show the uri for the current page
- i - show included pages
- c - clone this page
- m - show page metadata (tags, revision)
- T - Tag page
-
-Movement:
- ENTER   - jump to page [under cursor]
+Basic Commands:
+ j/k/h/l/arrow keys - move cursor
  n/N     - move to next/previous link
- h/l/j/k - left/right/down/up
- 0/G     - move to beginning/end of page
+ ENTER   - jump to page [under cursor]
  space/- - page down/up
+ b       - go back
+ e       - open page for edit
+ r       - choose from recently changed pages
+
+Awesome Commands:
+ 0/G - move to beginning/end of page
+ w   - set workspace
+ p   - set page
+ t   - tagged pages
+ g   - frontlinks
+ B   - backlinks
+ E   - open page for edit (--pull-includes)
+ u   - show the uri for the current page
+ i   - show included pages
+ m   - show page metadata (tags, revision)
+ T   - Tag page
+ c   - clone this page
+ C   - clone page from template
+ P   - New blog post (read tags from current page)
 
 Search:
  / - search forward
  ? - search backwards 
- (search n/N conflicts with next/prev link)
+ (Bad: search n/N conflicts with next/prev link)
 
 Ctrl-q / Ctrl-c / q - quit
 EOT
@@ -131,6 +134,28 @@ sub show_metadata {
     );
 }
 
+sub new_blog_post {
+    my $r = $App->{rester};
+
+    (my $username = qx(id)) =~ s/^.+?\(([^)]+)\).+/$1/s;
+    my @now = localtime;
+    my $default_post = sprintf '%s, %4d-%02d-%02d', $username,
+                               $now[5] + 1900, $now[4] + 1, $now[3];
+    my $page_name = $App->{cui}->question(
+        -question => 'Enter name of new blog post:',
+        -answer   => $default_post,
+    ) || '';
+    return unless $page_name;
+
+    $App->{cui}->status('Fetching tags ...');
+    $r->accept('text/plain');
+    my @tags = _get_current_tags($App->get_page);
+    $App->{cui}->nostatus;
+
+    $App->set_page($page_name);
+    editor( map { ('--tag', $_) } @tags );
+}
+
 sub show_uri {
     my $r = $App->{rester};
     my $uri = $r->server . '/' . $r->workspace 
@@ -146,14 +171,22 @@ sub clone_page {
     $r->accept('text/x.socialtext-wiki');
     my $template = $r->get_page($template_page);
     my $new_page = $App->{cui}->question("Title for new page:");
-    $App->{cui}->status("Creating page ...");
-    $r->put_page($new_page, $template);
-    $r->accept('text/plain');
-    my @tags = grep { $_ ne 'template' } $r->get_pagetags($template_page);
-    $r->put_pagetag($new_page, $_) for @tags;
-    $App->{cui}->nostatus;
+    if ($new_page) {
+        $App->{cui}->status("Creating page ...");
+        $r->put_page($new_page, $template);
+        my @tags = _get_current_tags($template_page);
+        $r->put_pagetag($new_page, $_) for @tags;
+        $App->{cui}->nostatus;
 
-    $App->set_page($new_page);
+        $App->set_page($new_page);
+    }
+}
+
+sub _get_current_tags {
+    my $page = shift;
+    my $r = $App->{rester};
+    $r->accept('text/plain');
+    return grep { $_ ne 'template' } $r->get_pagetags($page);
 }
 
 sub clone_page_from_template {
@@ -322,6 +355,7 @@ sub toggle_editable {
     $w->text($new_text);
 
     if ($readonly) {
+        $w->{last_text} = $new_text;
         $w->cursor_to_home;
         $w->focus;
     }
@@ -330,12 +364,53 @@ sub toggle_editable {
     }
 
     $cb->() if $cb and !$readonly;
+
+    if (! $readonly and $w->text =~ m/^\s*$/) {
+        $w->text($w->{last_text}) if $w->{last_text};
+    }
+
     $w->readonly(!$readonly);
     $w->set_binding( sub { toggle_editable($w, $cb) }, KEY_ENTER );
 }
 
 sub _create_ui_widgets {
     my $self = shift;
+    my %widget_positions = (
+        workspace_field => {
+            -width => 18,
+            -x     => 1,
+        },
+        page_field => {
+            -width => 45,
+            -x     => 32,
+        },
+        tag_field => {
+            -width => 15,
+            -x     => 85,
+        },
+        help_label => {
+            -x => 107,
+        },
+        page_viewer => {
+            -y => 1,
+        },
+    );
+    
+    my $win_width = $self->width;
+    if ($win_width < 110 and $win_width >= 80) {
+        $widget_positions{tag_field} = {
+            -width => 18,
+            -x     => 1,
+            -y     => 1,
+            label_padding => 6,
+        };
+        $widget_positions{help_label} = {
+            -x => 32,
+            -y => 1,
+        };
+        $widget_positions{page_viewer}{-y} = 2;
+    }
+
     #######################################
     # Create the Workspace label and field
     #######################################
@@ -343,8 +418,7 @@ sub _create_ui_widgets {
     $self->{cb}{workspace} = $wksp_cb;
     $self->{workspace_box} = $self->add_field('Workspace:', $wksp_cb,
         -text => $App->{rester}->workspace,
-        -width => 18,
-        -x => 1,
+        %{ $widget_positions{workspace_field} },
     );
 
     #######################################
@@ -353,8 +427,7 @@ sub _create_ui_widgets {
     my $page_cb = sub { toggle_editable( shift, sub { $App->load_page } ) };
     $self->{cb}{page} = $page_cb;
     $self->{page_box} = $self->add_field('Page:', $page_cb,
-        -width => 45,
-        -x => 32,
+        %{ $widget_positions{page_field} },
     );
 
     #######################################
@@ -363,14 +436,13 @@ sub _create_ui_widgets {
     my $tag_cb = sub { toggle_editable( shift, \&tag_change ) };
     $self->{cb}{tag} = $tag_cb;
     $self->{tag_box} = $self->add_field('Tag:', $tag_cb,
-        -width => 15,
-        -x => 85,
+        %{ $widget_positions{tag_field} },
     );
 
     $self->add(undef, 'Label',
-        -x => 107,
         -bold => 1,
-        -text => "Help: hit '?'"
+        -text => "Help: hit '?'",
+        %{ $widget_positions{help_label} },
     );
 
     #######################################
@@ -379,7 +451,7 @@ sub _create_ui_widgets {
     $self->{viewer} = $self->add(
         'viewer', 'Socialtext::Wikrad::PageViewer',
         -border => 1,
-        -y      => 1,
+        %{ $widget_positions{page_viewer} },
     );
 }
 
@@ -394,13 +466,16 @@ sub add_field {
     my $cb = shift;
     my %args = @_;
     my $x = $args{-x} || 0;
+    my $y = $args{-y} || 0;
+    my $label_padding = $args{label_padding} || 0;
 
     $self->add(undef, 'Label',
         -bold => 1,
         -text => $desc,
         -x => $x,
+        -y => $y,
     );
-    $args{-x} = $x + length($desc) + 1;
+    $args{-x} = $x + length($desc) + 1 + $label_padding;
     my $w = $self->add(undef, 'TextEntry', 
         -singleline => 1,
         -sbborder => 1,

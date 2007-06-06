@@ -1,11 +1,12 @@
 # http://module-build.sourceforge.net/META-spec.html
 #XXXXXXX This is a prototype!!!  It will change in the future!!! XXXXX#
 name:         Socialtext-Wikrad
-version:      0.04
+version:      0.05
 version_from: lib/Socialtext/Wikrad.pm
 installdirs:  site
 requires:
     Curses::UI:                    0.95
+    Socialtext::EditPage:          0.04
     Socialtext::Resting:           0.19
     Socialtext::Resting::Getopt:   0
 
