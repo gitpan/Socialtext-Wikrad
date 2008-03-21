@@ -1,5 +1,13 @@
 Changelog:
 
+0.06 - Fri Feb 22 18:08:34 PST 2008
+ - Don't ass-u-me black background
+ - Use a wikrad user agent string
+ - Added 's' for search!
+ - Added '--latest <tag>' option
+ - Added ability to change REST server - 'S'
+ - Write the current page to disk - 'w'
+
 0.05 - Tue Jun  5 19:24:15 PDT 2007
  - wikrad now works in 80 column terminals
  - Add 'P' - new blog post in current blog

@@ -3,10 +3,11 @@ use strict;
 use warnings;
 use Curses::UI;
 use Carp qw/croak/;
+use File::Path qw/mkpath/;
 use base 'Exporter';
 our @EXPORT_OK = qw/$App/;
 
-our $VERSION = '0.05';
+our $VERSION = '0.06';
 
 =head1 NAME
 
@@ -26,9 +27,11 @@ sub new {
     my $class = shift;
     $App = { 
         history => [],
+        save_dir => "$ENV{HOME}/wikrad",
         @_ ,
     };
     die 'rester is mandatory' unless $App->{rester};
+    $App->{rester}->agent_string("wikrad/$VERSION");
     bless $App, $class;
     $App->_setup_ui;
     return $App;
@@ -44,6 +47,15 @@ sub run {
 
     $self->{cui}->reset_curses;
     $self->{cui}->mainloop;
+}
+
+sub save_dir { 
+    my $self = shift;
+    my $dir = $self->{save_dir};
+    unless (-d $dir) {
+        mkpath $dir or die "Can't mkpath $dir: $!";
+    }
+    return $dir;
 }
 
 sub set_page {
@@ -69,6 +81,16 @@ sub set_page {
     }
     $pb->text($page);
     $self->load_page;
+}
+
+sub set_last_tagged_page {
+    my $self = shift;
+    my $tag  = shift;
+    my $r = $self->{rester};
+
+    $r->accept('text/plain');
+    my @pages = $r->get_taggedpages($tag);
+    $self->set_page(shift @pages);
 }
 
 sub set_workspace {

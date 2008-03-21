@@ -28,6 +28,9 @@ sub new {
     $v->set_binding( \&show_metadata,            'm' );
     $v->set_binding( \&add_pagetag,              'T' );
     $v->set_binding( \&new_blog_post,            'P' );
+    $v->set_binding( \&change_server,            'S' );
+    $v->set_binding( \&save_to_file,             'W' );
+    $v->set_binding( \&search,                   's' );
 
     $v->set_binding( sub { editor() },                  'e' );
     $v->set_binding( sub { editor('--pull-includes') }, 'E' );
@@ -73,6 +76,7 @@ Awesome Commands:
  w   - set workspace
  p   - set page
  t   - tagged pages
+ s   - search
  g   - frontlinks
  B   - backlinks
  E   - open page for edit (--pull-includes)
@@ -83,11 +87,12 @@ Awesome Commands:
  c   - clone this page
  C   - clone page from template
  P   - New blog post (read tags from current page)
+ S   - Change REST server
 
-Search:
- / - search forward
- ? - search backwards 
- (Bad: search n/N conflicts with next/prev link)
+Find:
+ / - find forward
+ ? - find backwards 
+ (Bad: find n/N conflicts with next/prev link)
 
 Ctrl-q / Ctrl-c / q - quit
 EOT
@@ -158,8 +163,7 @@ sub new_blog_post {
 
 sub show_uri {
     my $r = $App->{rester};
-    my $uri = $r->server . '/' . $r->workspace 
-              . '/index.cgi?' 
+    my $uri = $r->server . '/' . $r->workspace . '/?' 
               . Socialtext::Resting::_name_to_id($App->get_page);
     $App->{cui}->dialog( -title => "Current page:", -message => " $uri" );
 }
@@ -343,6 +347,65 @@ sub tag_change {
             },
         );
     }
+}
+
+sub search {
+    my $r = $App->{rester};
+
+    my $query = $App->{cui}->question( 
+        -question => "Search"
+    ) || return;
+
+    $App->{cui}->status("Looking for pages matching your query");
+    $r->accept('text/plain');
+    $r->query($query);
+    $r->order('newest');
+    my @matches = $r->get_pages;
+    $r->query('');
+    $r->order('');
+    $App->{cui}->nostatus;
+    $App->{win}->listbox(
+        -title => 'Choose a page link',
+        -values => \@matches,
+        change_cb => sub {
+            my $link = shift;
+            $App->set_page($link) if $link;
+        },
+    );
+}
+
+sub change_server {
+    my $r = $App->{rester};
+    my $old_server = $r->server;
+    my $question = <<EOT;
+Enter the REST server you'd like to use:
+  (Current server: $old_server)
+EOT
+    my $new_server = $App->{cui}->question( 
+        -question => $question,
+        -answer   => $old_server,
+    ) || '';
+    if ($new_server and $new_server ne $old_server) {
+        $r->server($new_server);
+    }
+}
+
+sub save_to_file {
+    my $r = $App->{rester};
+    my $filename;
+    eval {
+        my $page_name = Socialtext::Resting::name_to_id($App->get_page);
+        $filename = $App->save_dir . "/$page_name.wiki";
+
+        open(my $fh, ">$filename") or die "Can't open $filename: $!";
+        print $fh $App->{win}{viewer}->text;
+        close $fh or die "Couldn't write $filename: $!";
+    };
+    my $msg = $@ ? "Error: $@" : "Saved to $filename";
+    $App->{cui}->dialog(
+        -title => "Saved page to disk",
+        -message => $msg,
+    );
 }
 
 sub toggle_editable {
