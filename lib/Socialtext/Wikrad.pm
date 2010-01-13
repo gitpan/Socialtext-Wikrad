@@ -7,7 +7,7 @@ use File::Path qw/mkpath/;
 use base 'Exporter';
 our @EXPORT_OK = qw/$App/;
 
-our $VERSION = '0.06';
+our $VERSION = '0.07';
 
 =head1 NAME
 
@@ -93,6 +93,62 @@ sub set_last_tagged_page {
     $self->set_page(shift @pages);
 }
 
+sub download {
+    my $self = shift;
+    my $current_page = $self->{win}{page_box}->text;
+    $self->{cui}->leave_curses;
+
+    my $r = $self->{rester};
+    
+    my $dir = $self->_unique_filename($current_page);
+    mkdir $dir or die "Error creating directory $dir: $!";
+
+    my %ct = (
+        html => 'text/html',
+        wiki => 'text/x.socialtext-wiki',
+    );
+
+    while (my ($ext, $ct) = each %ct) {
+        $r->accept($ct);
+        my $file = "$dir/content.$ext";
+        open my $fh, ">$file" or die "Can't open $file: $!";
+        print $fh $r->get_page($current_page);
+        close $fh or die "Can't open $file: $!";
+    }
+    
+    # Fetch attachments
+    $r->accept('perl_hash');
+    my $attachments = $r->get_page_attachments($current_page);
+
+    for my $a (@$attachments) {
+        my $filename = "$dir/$a->{name}";
+        my ( $status, $content ) = $r->_request(
+            uri    => $a->{uri},
+            method => 'GET',
+        );
+        if ($status != 200) {
+            warn "Error downloading $filename: $status";
+            next;
+        }
+        open my $fh, ">$filename" or die "Can't open $filename: $!\n";
+        print $fh $content;
+        close $fh or die "Error writing to $filename: $!\n";
+        print "Downloaded $filename\n";
+    }
+}
+
+sub _unique_filename {
+    my $self = shift;
+    my $original = shift;
+    my $filename = $original;
+    my $i = 0;
+    while (-e $filename) {
+        $i++;
+        $filename = "$original.$i";
+    }
+    return $filename;
+}
+
 sub set_workspace {
     my $self = shift;
     my $wksp = shift;
@@ -136,6 +192,7 @@ sub load_page {
     $self->{cui}->status("Loading page $current_page ...");
     $self->{rester}->accept('text/x.socialtext-wiki');
     my $page_text = $self->{rester}->get_page($current_page);
+    $page_text = $self->_render_wikitext_wafls($page_text);
     $self->{cui}->nostatus;
     $self->{win}{viewer}->text($page_text);
     $self->{win}{viewer}->cursor_to_home;
@@ -147,5 +204,24 @@ sub _setup_ui {
     $self->{win} = $self->{cui}->add('main', 'Socialtext::Wikrad::Window');
     $self->{cui}->leave_curses;
 }
+
+sub _render_wikitext_wafls {
+    my $self = shift;
+    my $text = shift;
+
+    if ($text =~ m/{st_(?:iteration|project)stories: <([^>]+)>}/) {
+        my $tag = $1;
+        my $replace_text = "Stories for tag: '$tag':\n";
+        $self->{rester}->accept('text/plain');
+        my @pages = $self->{rester}->get_taggedpages($tag);
+    
+        $replace_text .= join("\n", map {"* [$_]"} @pages);
+        $replace_text .= "\n";
+        $text =~ s/{st_(?:iteration|project)stories: <[^>]+>}/$replace_text/;
+    }
+
+    return $text;
+}
+
 
 1;
